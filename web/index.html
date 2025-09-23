@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Smart Home IoT — Dashboard</title>
+	<link rel="preconnect" href="https://unpkg.com" />
+	<style>
+		body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'; margin: 0; padding: 24px; background: #0b1220; color: #dce2f0; }
+		.container { max-width: 960px; margin: 0 auto; }
+		h1 { margin: 0 0 16px; font-size: 22px; }
+		.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+		.card { background: #121a2a; border: 1px solid #1e2a42; border-radius: 8px; padding: 16px; }
+		.kpi { font-size: 28px; font-weight: 700; }
+		.label { opacity: .8; font-size: 12px; }
+		.log { height: 180px; overflow: auto; background: #0f1626; border: 1px solid #1e2a42; border-radius: 6px; padding: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px; }
+		footer { margin-top: 24px; opacity: .7; font-size: 12px; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>Smart Home IoT — Dashboard</h1>
+		<div class="grid">
+			<div class="card"><div class="label">Temperatura (°C)</div><div id="kpi-temp" class="kpi">—</div></div>
+			<div class="card"><div class="label">Humedad (%)</div><div id="kpi-hum" class="kpi">—</div></div>
+			<div class="card"><div class="label">Consumo (W)</div><div id="kpi-pow" class="kpi">—</div></div>
+		</div>
+		<div class="card" style="margin-top:16px;">
+			<div class="label">Mensajes recientes</div>
+			<pre id="log" class="log"></pre>
+		</div>
+		<footer>
+			Broker: <code>wss://test.mosquitto.org:8081/mqtt</code> · Tópico: <code>home/+/sensor/+</code>
+		</footer>
+	</div>
+	<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+	<script src="app.js"></script>
+</body>
+</html>

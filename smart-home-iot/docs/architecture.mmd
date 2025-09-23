@@ -1,0 +1,19 @@
+flowchart LR
+  A["Publisher (Node.js)"] -->|MQTT WS| B[("Broker HiveMQ")]
+  B -->|MQTT WS| C["Frontend (React + Vite)"]
+
+  subgraph Topics["Topics"]
+    D["home/livingroom/temperature"]
+    E["home/livingroom/humidity"]
+    F["home/main/power"]
+    G["home/sensors (consolidado)"]
+  end
+
+  A --> D
+  A --> E
+  A --> F
+  A --> G
+  D -.-> C
+  E -.-> C
+  F -.-> C
+  G -.-> C

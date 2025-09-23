@@ -1,0 +1,11 @@
+{
+  "name": "smart-home-iot",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "diagram": "mmdc -i docs/architecture.mmd -o docs/architecture.png"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.10.1"
+  }
+}

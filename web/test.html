@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Home IoT - Test</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #1a1a1a; 
+            color: #fff; 
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { 
+            background: #2a2a2a; 
+            border: 1px solid #444; 
+            border-radius: 8px; 
+            padding: 20px; 
+            margin: 10px 0; 
+        }
+        .value { 
+            font-size: 24px; 
+            font-weight: bold; 
+            color: #4CAF50; 
+        }
+        .log { 
+            background: #000; 
+            color: #0f0; 
+            padding: 10px; 
+            border-radius: 4px; 
+            font-family: monospace; 
+            height: 200px; 
+            overflow-y: auto; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Smart Home IoT - Test de Conexión</h1>
+        
+        <div class="card">
+            <h3>Estado de Conexión</h3>
+            <div id="status">Desconectado</div>
+        </div>
+        
+        <div class="card">
+            <h3>Datos de Sensores</h3>
+            <p>Temperatura: <span id="temp" class="value">--</span>°C</p>
+            <p>Humedad: <span id="hum" class="value">--</span>%</p>
+            <p>Consumo: <span id="power" class="value">--</span>W</p>
+        </div>
+        
+        <div class="card">
+            <h3>Log de Mensajes</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script>
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+        const temp = document.getElementById('temp');
+        const hum = document.getElementById('hum');
+        const power = document.getElementById('power');
+
+        function addLog(message) {
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `[${time}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        addLog('Iniciando conexión...');
+
+        // Intentar conectar a diferentes brokers
+        const brokers = [
+            'wss://test.mosquitto.org:8081/mqtt',
+            'wss://broker.hivemq.com:8000/mqtt',
+            'ws://localhost:9001'
+        ];
+
+        let currentBroker = 0;
+
+        function tryConnect() {
+            if (currentBroker >= brokers.length) {
+                addLog('❌ No se pudo conectar a ningún broker');
+                status.textContent = 'Error de conexión';
+                return;
+            }
+
+            const brokerUrl = brokers[currentBroker];
+            addLog(`🔄 Intentando conectar a: ${brokerUrl}`);
+
+            const client = mqtt.connect(brokerUrl, {
+                clean: true,
+                reconnectPeriod: 0
+            });
+
+            client.on('connect', () => {
+                addLog(`✅ Conectado a: ${brokerUrl}`);
+                status.textContent = `Conectado a: ${brokerUrl}`;
+                
+                // Suscribirse a todos los tópicos posibles
+                const topics = [
+                    'home/+/sensor/+',
+                    'home/sensors',
+                    'home/livingroom/sensor/temperature',
+                    'home/livingroom/sensor/humidity',
+                    'home/main/sensor/power'
+                ];
+
+                topics.forEach(topic => {
+                    client.subscribe(topic, (err) => {
+                        if (err) {
+                            addLog(`❌ Error suscribiéndose a ${topic}: ${err.message}`);
+                        } else {
+                            addLog(`✅ Suscrito a: ${topic}`);
+                        }
+                    });
+                });
+            });
+
+            client.on('message', (topic, payload) => {
+                addLog(`📨 Mensaje de ${topic}: ${payload.toString()}`);
+                
+                try {
+                    const data = JSON.parse(payload.toString());
+                    
+                    if (data.type === 'temperature' && data.value) {
+                        temp.textContent = data.value.toFixed(1);
+                        addLog(`🌡️ Temperatura: ${data.value.toFixed(1)}°C`);
+                    }
+                    if (data.type === 'humidity' && data.value) {
+                        hum.textContent = data.value.toFixed(1);
+                        addLog(`💧 Humedad: ${data.value.toFixed(1)}%`);
+                    }
+                    if (data.type === 'power' && data.value) {
+                        power.textContent = data.value.toFixed(1);
+                        addLog(`⚡ Consumo: ${data.value.toFixed(1)}W`);
+                    }
+                    
+                    // También probar formato consolidado
+                    if (data.temperature) {
+                        temp.textContent = data.temperature.toFixed(1);
+                        addLog(`🌡️ Temp (consolidado): ${data.temperature.toFixed(1)}°C`);
+                    }
+                    if (data.humidity) {
+                        hum.textContent = data.humidity.toFixed(1);
+                        addLog(`💧 Humedad (consolidado): ${data.humidity.toFixed(1)}%`);
+                    }
+                    if (data.power) {
+                        power.textContent = data.power.toFixed(1);
+                        addLog(`⚡ Consumo (consolidado): ${data.power.toFixed(1)}W`);
+                    }
+                } catch (e) {
+                    addLog(`❌ Error parseando JSON: ${e.message}`);
+                }
+            });
+
+            client.on('error', (err) => {
+                addLog(`❌ Error: ${err.message}`);
+                currentBroker++;
+                setTimeout(tryConnect, 2000);
+            });
+
+            client.on('offline', () => {
+                addLog('📴 Desconectado');
+                status.textContent = 'Desconectado';
+            });
+        }
+
+        // Iniciar conexión
+        tryConnect();
+    </script>
+</body>
+</html>
