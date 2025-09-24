@@ -1,24 +1,26 @@
-# Smart Home IoT — MVP
+# Smart Home IoT — Sistema de Monitoreo en Tiempo Real
 
-Sistema de monitoreo de hogar inteligente que visualiza datos de sensores (temperatura, humedad y consumo eléctrico) en tiempo real usando MQTT.
+Sistema de hogar inteligente que visualiza datos de sensores (temperatura, humedad y consumo eléctrico) en tiempo real usando MQTT.
 
-## Estructura
+![Node.js](https://img.shields.io/badge/Node.js-v18-green)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-- `publisher/`: Simulador de sensores Node.js que publica datos por MQTT
-- `smart-home-iot/`: Aplicación principal con frontend React y publisher alternativo
-- `web/`: Dashboard web estático simple
-- `docs/`: Documentación y diagramas de arquitectura
+---
 
-## Fuente de datos y tópicos
+## 📂 Estructura del proyecto
 
-Broker público Mosquitto:
-- Frontend (WS): `wss://test.mosquitto.org:8081/mqtt`
+- 📦 `publisher/` — Simulador de sensores Node.js que publica datos por MQTT
+- 📦 `smart-home-iot/` — Aplicación principal con frontend React y publisher alternativo
+- 📦 `web/` — Dashboard web estático simple
+- 📦 `docs/` — Documentación y diagramas de arquitectura
+
+---
+
+## 🔌 Fuente de datos y tópicos
+
+Broker público Mosquitto:  
+- Frontend (WebSocket): `wss://test.mosquitto.org:8081/mqtt`  
 - Publisher (TCP): `mqtt://test.mosquitto.org:1883`
-
-Tópicos:
-- `home/{location}/sensor/{type}` p.ej. `home/livingroom/sensor/temperature`
-- El frontend se suscribe a: `home/+/sensor/+`
-
 Payload JSON por mensaje:
 
 ```json
@@ -33,6 +35,29 @@ Payload JSON por mensaje:
 ```
 
 Tipos simulados: `temperature (C)`, `humidity (%)`, `power (W)`.
+
+---
+
+## ✨ Features
+
+- Monitorización en tiempo real de sensores de temperatura, humedad y consumo eléctrico.  
+- Dashboard web interactivo con React.  
+- Simulador de sensores independiente en Node.js.  
+- Tópicos MQTT dinámicos con suscripción `home/+/sensor/+`.  
+- Opcional: dashboard web estático simple para demo rápida.  
+
+---
+
+## ⚙️ How it works
+
+1. **Publisher**: Envía datos simulados de sensores vía MQTT al broker público.  
+2. **Broker Mosquitto**: Recibe y distribuye los mensajes a los suscriptores.  
+3. **Frontend React**: Se suscribe a los tópicos y actualiza la interfaz en tiempo real.  
+4. **Dashboard web**: Muestra los valores de cada sensor con actualizaciones automáticas.  
+
+El flujo de datos es:  
+`Publisher → MQTT Broker → Frontend / Dashboard`  
+
 
 ## Ejecutar localmente
 
