@@ -6,7 +6,7 @@ const MQTT_URL = process.env.MQTT_URL || 'mqtt://test.mosquitto.org:1883';
 const BASE_TOPIC = process.env.BASE_TOPIC || 'home';
 const LOCATION = process.env.LOCATION || 'livingroom';
 const DEVICE_ID = process.env.DEVICE_ID || 'sensor-01';
-const PUBLISH_INTERVAL_MS = Number(process.env.PUBLISH_INTERVAL_MS || 2000);
+const PUBLISH_INTERVAL_MS = Number(process.env.PUBLISH_INTERVAL_MS || 30000);
 
 function randomInRange(min, max, digits = 1) {
 	const n = min + Math.random() * (max - min);

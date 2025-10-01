@@ -3,10 +3,19 @@
 const MQTT_WS_URL = 'wss://test.mosquitto.org:8081/mqtt';
 const BASE_TOPIC = 'home';
 
-const elTemp = document.getElementById('kpi-temp');
-const elHum = document.getElementById('kpi-hum');
-const elPow = document.getElementById('kpi-pow');
 const elLog = document.getElementById('log');
+
+// Rooms and element references
+const ROOMS = ['cocina', 'jardin', 'bano', 'habitacion'];
+const KPI = {};
+ROOMS.forEach(r => {
+  KPI[r] = {
+    temperature: document.getElementById(`kpi-temp-${r}`),
+    humidity: document.getElementById(`kpi-hum-${r}`),
+    power: document.getElementById(`kpi-pow-${r}`),
+    co2: document.getElementById(`kpi-co2-${r}`)
+  };
+});
 
 function appendLog(line) {
 	const t = new Date().toLocaleTimeString();
@@ -39,26 +48,26 @@ client.on('connect', () => {
 client.on('reconnect', () => appendLog('🔄 Reconectando...'));
 client.on('error', (err) => appendLog('❌ Error: ' + err.message));
 client.on('offline', () => appendLog('📴 Desconectado'));
-
 client.on('message', (topic, payload) => {
 	try {
 		const data = JSON.parse(payload.toString());
 		appendLog(`📨 Mensaje recibido de ${topic}`);
 		appendLog(`📊 Datos: ${JSON.stringify(data)}`);
 		
-		if (data && typeof data.type === 'string' && typeof data.value === 'number') {
-			// Procesar datos individuales de sensores
-			if (data.type === 'temperature') {
-				elTemp.textContent = data.value.toFixed(1);
-				appendLog(`🌡️ Temperatura actualizada: ${data.value.toFixed(1)}°C`);
-			}
-			if (data.type === 'humidity') {
-				elHum.textContent = data.value.toFixed(1);
-				appendLog(`💧 Humedad actualizada: ${data.value.toFixed(1)}%`);
-			}
-			if (data.type === 'power') {
-				elPow.textContent = data.value.toFixed(1);
-				appendLog(`⚡ Consumo actualizado: ${data.value.toFixed(1)}W`);
+		if (
+			data && typeof data.type === 'string' && typeof data.value === 'number' && typeof data.location === 'string'
+		) {
+			const room = data.location;
+			if (ROOMS.includes(room)) {
+				const el = KPI[room][data.type];
+				if (el) {
+					el.textContent = data.value.toFixed(1);
+					const unit = data.type === 'temperature' ? '°C' : (data.type === 'humidity' ? '%' : 'W');
+					const icon = data.type === 'temperature' ? '🌡️' : (data.type === 'humidity' ? '💧' : '⚡');
+					appendLog(`${icon} ${room} ${data.type} -> ${data.value.toFixed(1)}${unit}`);
+				}
+			} else {
+				appendLog(`ℹ️ Mensaje con ubicación no gestionada: ${room}`);
 			}
 		}
 	} catch (e) {

@@ -5,26 +5,65 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Smart Home IoT — Dashboard</title>
 	<link rel="preconnect" href="https://unpkg.com" />
-	<style>
 		body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'; margin: 0; padding: 24px; background: #0b1220; color: #dce2f0; }
-		.container { max-width: 960px; margin: 0 auto; }
+		.container { max-width: 1100px; margin: 0 auto; }
 		h1 { margin: 0 0 16px; font-size: 22px; }
-		.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-		.card { background: #121a2a; border: 1px solid #1e2a42; border-radius: 8px; padding: 16px; }
-		.kpi { font-size: 28px; font-weight: 700; }
+		.rooms { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+		.room { background: #101828; border: 1px solid #1e2a42; border-radius: 10px; padding: 16px; }
+		.room h2 { margin: 0 0 12px; font-size: 18px; }
+		.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+		.card { background: #121a2a; border: 1px solid #223354; border-radius: 8px; padding: 12px; }
+		.kpi { font-size: 24px; font-weight: 700; }
 		.label { opacity: .8; font-size: 12px; }
 		.log { height: 180px; overflow: auto; background: #0f1626; border: 1px solid #1e2a42; border-radius: 6px; padding: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px; }
 		footer { margin-top: 24px; opacity: .7; font-size: 12px; }
-	</style>
 </head>
 <body>
 	<div class="container">
 		<h1>Smart Home IoT — Dashboard</h1>
-		<div class="grid">
-			<div class="card"><div class="label">Temperatura (°C)</div><div id="kpi-temp" class="kpi">—</div></div>
-			<div class="card"><div class="label">Humedad (%)</div><div id="kpi-hum" class="kpi">—</div></div>
-			<div class="card"><div class="label">Consumo (W)</div><div id="kpi-pow" class="kpi">—</div></div>
+
+		<div class="rooms">
+			<div class="room" id="room-cocina">
+				<h2>Cocina</h2>
+				<div class="kpis">
+					<div class="card"><div class="label">Temperatura (°C)</div><div id="kpi-temp-cocina" class="kpi">—</div></div>
+					<div class="card"><div class="label">Humedad (%)</div><div id="kpi-hum-cocina" class="kpi">—</div></div>
+					<div class="card"><div class="label">Consumo (W)</div><div id="kpi-pow-cocina" class="kpi">—</div></div>
+					<div class="card"><div class="label">CO₂ (ppm)</div><div id="kpi-co2-cocina" class="kpi">—</div></div>
+				</div>
+			</div>
+
+			<div class="room" id="room-jardin">
+				<h2>Jardín</h2>
+				<div class="kpis">
+					<div class="card"><div class="label">Temperatura (°C)</div><div id="kpi-temp-jardin" class="kpi">—</div></div>
+					<div class="card"><div class="label">Humedad (%)</div><div id="kpi-hum-jardin" class="kpi">—</div></div>
+					<div class="card"><div class="label">Consumo (W)</div><div id="kpi-pow-jardin" class="kpi">—</div></div>
+					<div class="card"><div class="label">CO₂ (ppm)</div><div id="kpi-co2-jardin" class="kpi">—</div></div>
+				</div>
+			</div>
+
+			<div class="room" id="room-bano">
+				<h2>Baño</h2>
+				<div class="kpis">
+					<div class="card"><div class="label">Temperatura (°C)</div><div id="kpi-temp-bano" class="kpi">—</div></div>
+					<div class="card"><div class="label">Humedad (%)</div><div id="kpi-hum-bano" class="kpi">—</div></div>
+					<div class="card"><div class="label">Consumo (W)</div><div id="kpi-pow-bano" class="kpi">—</div></div>
+					<div class="card"><div class="label">CO₂ (ppm)</div><div id="kpi-co2-bano" class="kpi">—</div></div>
+				</div>
+			</div>
+
+			<div class="room" id="room-habitacion">
+				<h2>Habitación</h2>
+				<div class="kpis">
+					<div class="card"><div class="label">Temperatura (°C)</div><div id="kpi-temp-habitacion" class="kpi">—</div></div>
+					<div class="card"><div class="label">Humedad (%)</div><div id="kpi-hum-habitacion" class="kpi">—</div></div>
+					<div class="card"><div class="label">Consumo (W)</div><div id="kpi-pow-habitacion" class="kpi">—</div></div>
+					<div class="card"><div class="label">CO₂ (ppm)</div><div id="kpi-co2-habitacion" class="kpi">—</div></div>
+				</div>
+			</div>
 		</div>
+
 		<div class="card" style="margin-top:16px;">
 			<div class="label">Mensajes recientes</div>
 			<pre id="log" class="log"></pre>

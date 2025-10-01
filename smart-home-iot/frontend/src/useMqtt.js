@@ -7,14 +7,16 @@ export default function useMqtt() {
 
   useEffect(() => {
     const brokerUrl = 'wss://test.mosquitto.org:8081/mqtt';
-  const topic = 'home/+/sensor/+';
+    const topics = ['home/+/sensor/+', 'home/+/device/+/power'];
 
     const client = mqtt.connect(brokerUrl, { reconnectPeriod: 3000 });
     clientRef.current = client;
 
     client.on('connect', () => {
-      client.subscribe(topic, { qos: 0 }, (err) => {
-        if (err) console.error('subscribe error', err);
+      topics.forEach((t) => {
+        client.subscribe(t, { qos: 0 }, (err) => {
+          if (err) console.error('subscribe error', t, err);
+        });
       });
     });
 

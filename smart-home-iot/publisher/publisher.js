@@ -4,18 +4,47 @@
 
 const mqtt = require('mqtt');
 
-// Broker público HiveMQ (WebSocket). Usalo solo para pruebas/demos.
-const BROKER_URL = process.env.BROKER_URL || 'mqtt://test.mosquitto.org:1883';
+// Broker público (por defecto WebSocket para evitar bloqueos TCP 1883)
+// Cambiá con BROKER_URL si querés otro host/puerto.
+// Ejemplos:
+//  - wss://test.mosquitto.org:8081/mqtt
+//  - wss://broker.hivemq.com:8000/mqtt
+//  - mqtt://test.mosquitto.org:1883 (TCP)
+const BROKER_URL = process.env.BROKER_URL || 'wss://test.mosquitto.org:8081/mqtt';
 
-// Topics
-const TOPICS = {
-  temperature: 'home/livingroom/sensor/temperature',
-  humidity: 'home/livingroom/sensor/humidity',
-  power: 'home/main/sensor/power'
+// Rooms to simulate
+const ROOMS = ['cocina', 'jardin', 'bano', 'habitacion'];
+
+// Devices per room with simple expected power profiles (W)
+const ROOM_DEVICES = {
+  cocina: [
+    { id: 'heladera', base: 120, peak: 180, duty: 0.6 },
+    { id: 'microondas', base: 0, peak: 1100, duty: 0.05 },
+    { id: 'cafetera', base: 0, peak: 800, duty: 0.03 }
+  ],
+  jardin: [
+    { id: 'bomba_agua', base: 0, peak: 400, duty: 0.1 },
+    { id: 'luces_exterior', base: 20, peak: 60, duty: 0.7 },
+    { id: 'cortadora', base: 0, peak: 1200, duty: 0.01 }
+  ],
+  bano: [
+    { id: 'calentador_agua', base: 0, peak: 1500, duty: 0.15 },
+    { id: 'extractor', base: 0, peak: 60, duty: 0.3 },
+    { id: 'luces', base: 5, peak: 25, duty: 0.5 }
+  ],
+  habitacion: [
+    { id: 'aire_acondicionado', base: 0, peak: 1200, duty: 0.2 },
+    { id: 'pc', base: 40, peak: 250, duty: 0.5 },
+    { id: 'lampara', base: 5, peak: 20, duty: 0.6 }
+  ]
 };
 
 // Conexión
-const client = mqtt.connect(BROKER_URL);
+const client = mqtt.connect(BROKER_URL, {
+  reconnectPeriod: 5000,
+  protocolVersion: 5,
+  clean: true
+});
 
 client.on('connect', () => {
   console.log('✅ Conectado al broker MQTT:', BROKER_URL);
@@ -43,6 +72,25 @@ function gaussianRandom(mean = 0, stdev = 1) {
   while(u === 0) u = Math.random();
   while(v === 0) v = Math.random();
   return mean + stdev * Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+// CO2 (ppm): niveles típicos interior 400-2000, con picos por ocupación
+function simulateCo2() {
+  const hour = new Date().getHours();
+  let base = 500;
+  if ((hour >= 8 && hour <= 10) || (hour >= 19 && hour <= 22)) base = 900;
+  const noise = gaussianRandom(0, 80);
+  const val = Math.max(380, base + noise);
+  return +val.toFixed(0);
+}
+
+function simulateDevicePower(profile) {
+  // Simple ON/OFF by duty cycle with noise
+  const on = Math.random() < profile.duty;
+  const expected = on ? profile.peak : profile.base;
+  const noise = gaussianRandom(0, Math.max(5, expected * 0.05));
+  const value = Math.max(0, expected + noise);
+  return { on, expected: +expected.toFixed(0), value: +value.toFixed(0) };
 }
 
 // Temperatura: base diaria (seno) + ruido gaussiano
@@ -78,7 +126,7 @@ function simulatePower() {
 }
 
 // Empaqueta y publica
-function publishSensor(topic, type, value, unit, location='livingroom') {
+function publishSensor(topic, type, value, unit, location = 'livingroom') {
   const payload = {
     deviceId: `sim-${location}-${type}`,
     type,
@@ -96,29 +144,56 @@ function publishSensor(topic, type, value, unit, location='livingroom') {
   });
 }
 
-// Publica periódicamente (cada 3s)
+// Publica periódicamente (cada 30s) para todas las habitaciones
 setInterval(() => {
-  const temp = simulateTemperature();
-  const hum = simulateHumidity();
-  const power = simulatePower();
+  ROOMS.forEach((room) => {
+    const temp = simulateTemperature();
+    const hum = simulateHumidity();
+    const co2 = simulateCo2();
 
-  publishSensor(TOPICS.temperature, 'temperature', temp, 'C', 'livingroom');
-  publishSensor(TOPICS.humidity, 'humidity', hum, '%', 'livingroom');
-  publishSensor(TOPICS.power, 'power', power, 'W', 'main');
+    // Per-device power and total aggregation
+    const devices = ROOM_DEVICES[room] || [];
+    let totalPower = 0;
+    devices.forEach((d) => {
+      const sim = simulateDevicePower(d);
+      totalPower += sim.value;
+      const payload = {
+        deviceId: `sim-${room}-${d.id}`,
+        type: 'device_power',
+        value: sim.value,
+        expected: sim.expected,
+        active: sim.on,
+        unit: 'W',
+        timestamp: new Date().toISOString(),
+        location: room,
+        device: d.id
+      };
+      client.publish(`home/${room}/device/${d.id}/power`, JSON.stringify(payload), { qos: 0 }, (err) => {
+        if (err) console.error(`❌ Error device ${room}/${d.id}`, err.message);
+      });
+    });
 
-  // Publicación consolidada en home/sensors
-  const consolidated = {
-    temperature: temp,
-    humidity: hum,
-    power: power,
-    timestamp: new Date().toISOString()
-  };
-  client.publish('home/sensors', JSON.stringify(consolidated), { qos: 0 }, (err) => {
-    if (err) {
-      console.error('❌ Error al publicar en home/sensors:', err.message);
-    } else {
-      console.log('➡️  Publicado en home/sensors:', consolidated);
-    }
+    publishSensor(`home/${room}/sensor/temperature`, 'temperature', temp, 'C', room);
+    publishSensor(`home/${room}/sensor/humidity`, 'humidity', hum, '%', room);
+    publishSensor(`home/${room}/sensor/co2`, 'co2', co2, 'ppm', room);
+    publishSensor(`home/${room}/sensor/power`, 'power', totalPower, 'W', room);
+
+    // Publicación consolidada por habitación (opcional)
+    const consolidated = {
+      temperature: temp,
+      humidity: hum,
+      co2,
+      power: totalPower,
+      timestamp: new Date().toISOString(),
+      location: room
+    };
+    client.publish(`home/${room}/sensors`, JSON.stringify(consolidated), { qos: 0 }, (err) => {
+      if (err) {
+        console.error(`❌ Error al publicar en home/${room}/sensors:`, err.message);
+      } else {
+        console.log(`➡️  Publicado en home/${room}/sensors:`, consolidated);
+      }
+    });
   });
 }, 30000);
 
