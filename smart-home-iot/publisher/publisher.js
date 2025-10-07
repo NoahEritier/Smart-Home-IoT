@@ -12,7 +12,7 @@ const mqtt = require('mqtt');
 //  - mqtt://test.mosquitto.org:1883 (TCP)
 const BROKER_URL = process.env.BROKER_URL || 'wss://test.mosquitto.org:8081/mqtt';
 
-// Rooms to simulate
+// Rooms to simulate (nota: usar 'bano' sin tilde para consistencia con claves)
 const ROOMS = ['cocina', 'jardin', 'bano', 'habitacion'];
 
 // Devices per room with simple expected power profiles (W)
@@ -66,6 +66,55 @@ client.on('error', (err) => {
   console.error('🚨 Error de conexión MQTT:', err.message);
 });
 
+// Estados de sistema
+let awayMode = false;
+
+function publishStateTopics() {
+  const awayPayload = { type: 'away_state', value: awayMode, timestamp: new Date().toISOString() };
+  client.publish('home/system/away/state', JSON.stringify(awayPayload), { qos: 0 });
+}
+
+// Suscripción a comandos de control
+client.on('connect', () => {
+  client.subscribe(['home/system/away/set', 'home/+/device/+/set'], { qos: 0 }, (err) => {
+    if (err) console.error('❌ Error al suscribirse a comandos:', err.message);
+  });
+  // Publicar estados al conectar
+  publishStateTopics();
+});
+
+client.on('message', (topic, payload) => {
+  try {
+    const data = JSON.parse(payload.toString());
+    if (topic === 'home/system/away/set') {
+      awayMode = Boolean(data?.value ?? data);
+      console.log(`🏠 Away set -> ${awayMode}`);
+      publishStateTopics();
+    }
+    // Device control: home/<room>/device/<device>/set
+    const match = topic.match(/^home\/(.+)\/device\/(.+)\/set$/);
+    if (match) {
+      const [, room, device] = match;
+      const desired = (typeof data?.value === 'string' ? data.value : data);
+      if (desired === 'on' || desired === true) setDeviceOverride(room, device, true);
+      if (desired === 'off' || desired === false) setDeviceOverride(room, device, false);
+    }
+  } catch (e) {
+    // comandos simples pueden venir como string llano
+    const txt = payload.toString();
+    if (topic === 'home/system/away/set') {
+      awayMode = txt === 'true' || txt === '1' || txt === 'on';
+      publishStateTopics();
+    }
+    const match = topic.match(/^home\/(.+)\/device\/(.+)\/set$/);
+    if (match) {
+      const [, room, device] = match;
+      const on = txt === 'on' || txt === '1' || txt === 'true';
+      setDeviceOverride(room, device, on);
+    }
+  }
+});
+
 // Generadores de señal realista
 function gaussianRandom(mean = 0, stdev = 1) {
   let u = 0, v = 0;
@@ -91,6 +140,17 @@ function simulateDevicePower(profile) {
   const noise = gaussianRandom(0, Math.max(5, expected * 0.05));
   const value = Math.max(0, expected + noise);
   return { on, expected: +expected.toFixed(0), value: +value.toFixed(0) };
+}
+
+// Overrides de dispositivos por habitación
+const DEVICE_OVERRIDE = {}; // { [room]: { [device]: boolean|null } }
+function setDeviceOverride(room, device, on) {
+  if (!DEVICE_OVERRIDE[room]) DEVICE_OVERRIDE[room] = {};
+  DEVICE_OVERRIDE[room][device] = on;
+  // Publicar estado inmediato
+  const payload = { device, room, active: on, timestamp: new Date().toISOString() };
+  client.publish(`home/${room}/device/${device}/state`, JSON.stringify(payload), { qos: 0 });
+  console.log(`🔌 Override ${room}/${device} -> ${on ? 'ON' : 'OFF'}`);
 }
 
 // Temperatura: base diaria (seno) + ruido gaussiano
@@ -144,6 +204,24 @@ function publishSensor(topic, type, value, unit, location = 'livingroom') {
   });
 }
 
+// Simulación de fugas por habitación
+const leakState = Object.fromEntries(ROOMS.map(r => [r, false]));
+function maybeToggleLeak(room) {
+  // Si está en fuga, chance de resolverse; si no, chance muy baja de ocurrir
+  const rnd = Math.random();
+  if (leakState[room]) {
+    if (rnd < 0.25) leakState[room] = false; // 25% de resolverse por ciclo
+  } else {
+    // Menor probabilidad si válvula está cerrada o modo away
+    const baseProb = 0.02; // 2% por ciclo
+    const damp = (awayMode ? 0.7 : 1);
+    if (rnd < baseProb * damp) leakState[room] = true;
+  }
+  // Publicar estado del sensor de fuga
+  const value = leakState[room] ? 1 : 0;
+  publishSensor(`home/${room}/sensor/leak`, 'leak', value, 'bool', room);
+}
+
 // Publica periódicamente (cada 30s) para todas las habitaciones
 setInterval(() => {
   ROOMS.forEach((room) => {
@@ -155,7 +233,13 @@ setInterval(() => {
     const devices = ROOM_DEVICES[room] || [];
     let totalPower = 0;
     devices.forEach((d) => {
-      const sim = simulateDevicePower(d);
+      let sim = simulateDevicePower(d);
+      const override = DEVICE_OVERRIDE[room]?.[d.id];
+      if (override === true) {
+        sim = { on: true, expected: d.peak, value: Math.max(d.peak - 20, d.peak * 0.95) };
+      } else if (override === false) {
+        sim = { on: false, expected: d.base, value: d.base };
+      }
       totalPower += sim.value;
       const payload = {
         deviceId: `sim-${room}-${d.id}`,
@@ -171,12 +255,18 @@ setInterval(() => {
       client.publish(`home/${room}/device/${d.id}/power`, JSON.stringify(payload), { qos: 0 }, (err) => {
         if (err) console.error(`❌ Error device ${room}/${d.id}`, err.message);
       });
+      // Publish explicit device state topic too
+      const statePayload = { device: d.id, room, active: sim.on, timestamp: new Date().toISOString() };
+      client.publish(`home/${room}/device/${d.id}/state`, JSON.stringify(statePayload), { qos: 0 });
     });
 
     publishSensor(`home/${room}/sensor/temperature`, 'temperature', temp, 'C', room);
     publishSensor(`home/${room}/sensor/humidity`, 'humidity', hum, '%', room);
     publishSensor(`home/${room}/sensor/co2`, 'co2', co2, 'ppm', room);
     publishSensor(`home/${room}/sensor/power`, 'power', totalPower, 'W', room);
+
+    // Fugas
+    maybeToggleLeak(room);
 
     // Publicación consolidada por habitación (opcional)
     const consolidated = {

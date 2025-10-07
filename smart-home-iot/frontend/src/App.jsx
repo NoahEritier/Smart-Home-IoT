@@ -1,14 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import useMqtt from './useMqtt';
 import SensorChart from './components/SensorChart';
 import './index.css';
 
 export default function App() {
-  const messages = useMqtt();
+  const { messages, states, publish } = useMqtt();
   const ROOMS = ['cocina', 'jardin', 'bano', 'habitacion'];
   const [room, setRoom] = useState(ROOMS[0]);
   const [deviceFilter, setDeviceFilter] = useState('activos'); // 'activos' | 'inactivos' | 'todos'
   const [dismissed, setDismissed] = useState(new Set()); // for toast close buttons
+  const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'control'
 
   const roomMessages = useMemo(() => messages.filter(m => m.location === room), [messages, room]);
 
@@ -81,31 +82,72 @@ export default function App() {
     return list;
   }, [latest, devices, room]);
 
+  // Leak detection across all rooms
+  const leakEvents = useMemo(() => messages.filter(m => m.type === 'leak' && (m.value === 1 || m.value === true)), [messages]);
+  const hasActiveLeak = leakEvents.length > 0;
+  const onToggleAway = () => publish('home/system/away/set', { value: !states.away });
+
+  // Auto-dismiss toasts after 6s
+  useEffect(() => {
+    const ids = alerts.map((a) => `${a.level}:${a.msg}`);
+    const timers = ids.map((id) => setTimeout(() => {
+      setDismissed((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    }, 6000));
+    return () => { timers.forEach(clearTimeout); };
+  }, [alerts]);
+
   return (
     <>
     <div className="app">
       <header>
-        <h1>Smart Home IoT — Dashboard</h1>
-        <p style={{opacity:0.8}}>Broker: wss://test.mosquitto.org:8081/mqtt · Topic: home/+ /sensor/+ · Sala: {room}</p>
-
-        <div style={{display:'flex', gap:8, marginTop:8, flexWrap:'wrap'}}>
-          {ROOMS.map(r => (
-            <button
-              key={r}
-              onClick={() => setRoom(r)}
-              style={{
-                padding:'6px 10px',
-                borderRadius:6,
-                border:'1px solid #1e2a42',
-                background: r === room ? '#1b2742' : '#121a2a',
-                color:'#dce2f0',
-                cursor:'pointer'
-              }}
-            >{r}</button>
-          ))}
+        <div className="navbar">
+          <div className="nav-left">
+            <div className="nav-brand">Smart Home IoT</div>
+            <div className="nav-tabs">
+              <button className={`nav-tab ${tab==='dashboard'?'nav-tab--active':''}`} onClick={() => setTab('dashboard')}>Dashboard</button>
+              <button className={`nav-tab ${tab==='control'?'nav-tab--active':''}`} onClick={() => setTab('control')}>Control</button>
+            </div>
+          </div>
         </div>
+        <div className="module-toolbar">
+          {/* Per-module menus */}
+          {tab==='dashboard' && (
+            <>
+              <span className="chip">Sala:</span>
+              {ROOMS.map(r => (
+                <button
+                  key={r}
+                  onClick={() => setRoom(r)}
+                  className="tab"
+                  style={{ background: r===room ? '#1b2742' : undefined }}
+                >{r}</button>
+              ))}
+              <span className="chip">Away: <strong>{states.away ? 'Activado' : 'Desactivado'}</strong></span>
+              <button onClick={onToggleAway} className="tab">{states.away ? 'Desactivar Away' : 'Activar Away'}</button>
+            </>
+          )}
+          {tab==='control' && (
+            <>
+              <span className="chip">Sala:</span>
+              {ROOMS.map(r => (
+                <button
+                  key={r}
+                  onClick={() => setRoom(r)}
+                  className="tab"
+                  style={{ background: r===room ? '#1b2742' : undefined }}
+                >{r}</button>
+              ))}
+            </>
+          )}
+        </div>
+        <p style={{opacity:0.8, marginTop:6}}>Broker: wss://test.mosquitto.org:8081/mqtt · Sala: {room}</p>
       </header>
 
+      {tab==='dashboard' && (
       <section className="values">
         <div className="card">
           <h3>Temperatura</h3>
@@ -128,7 +170,9 @@ export default function App() {
           <small>{ latest.co2 ? new Date(latest.co2.timestamp).toLocaleTimeString() : '' }</small>
         </div>
       </section>
+      )}
 
+      {tab==='dashboard' && (
       <section className="charts">
         <div className="chart-card">
           <SensorChart title={`Temperatura (°C) — ${room}`} dataKey="value" data={roomMessages.filter(m => m.type === 'temperature')} />
@@ -143,7 +187,24 @@ export default function App() {
           <SensorChart title={`CO₂ (ppm) — ${room}`} dataKey="value" data={roomMessages.filter(m => m.type === 'co2')} />
         </div>
       </section>
+      )}
 
+      {tab==='dashboard' && hasActiveLeak && (
+        <section className="card" style={{marginTop:16, borderColor:'#6b1d1d', background:'#1e0f12'}}>
+          <h3 style={{marginTop:0}}>ALERTA: Fuga de agua detectada</h3>
+          <p style={{opacity:.9, marginTop:4}}>
+            Se han reportado sensores con fuga. Acciones rápidas:
+          </p>
+          <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+            {!states.away && (
+              <button onClick={() => publish('home/system/away/set', { value: true })} style={{padding:'6px 10px', borderRadius:6, border:'1px solid #1e2a42', background:'#121a2a', color:'#dce2f0'}}>Activar Away</button>
+            )}
+          </div>
+          <small style={{display:'block', marginTop:8, opacity:.8}}>Últimas fugas: {leakEvents.slice(-5).map(e => e.location).join(', ')}</small>
+        </section>
+      )}
+
+      {tab==='dashboard' && (
       <section className="card" style={{marginTop:16}}>
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap'}}>
           <h3 style={{margin:0}}>Dispositivos — {room}</h3>
@@ -174,6 +235,43 @@ export default function App() {
           </div>
         )}
       </section>
+      )}
+
+      {tab==='control' && (
+        <section className="card" style={{marginTop:16}}>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap'}}>
+            <h3 style={{margin:0}}>Control de dispositivos — {room}</h3>
+            <div style={{opacity:.8}}>Pulsa el switch para encender/apagar (MQTT)</div>
+          </div>
+          {devices.length === 0 ? (
+            <p style={{opacity:.8}}>Sin datos de dispositivos todavía.</p>
+          ) : (
+            <div className="device-list">
+              {devices.map(({ device, data }) => {
+                const isOn = Boolean(data.active);
+                return (
+                  <div key={device} className="device-item">
+                    <div className="device-info">
+                      <div className="device-title">{device}</div>
+                      <div className="device-meta">{isOn ? 'Encendido' : 'Apagado'} · {typeof data.value==='number' ? `${data.value}W` : '—'}</div>
+                    </div>
+                    <button
+                      className={`toggle ${isOn ? 'toggle--on' : ''}`}
+                      onClick={() => publish(`home/${room}/device/${device}/set`, { value: isOn ? 'off' : 'on' })}
+                      aria-pressed={isOn}
+                      aria-label={`Cambiar estado de ${device}`}
+                    >
+                      <span className="toggle__label toggle__label--off">OFF</span>
+                      <span className="toggle__label toggle__label--on">ON</span>
+                      <span className="toggle__knob">{isOn ? 'ON' : 'OFF'}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="card" style={{marginTop:16}}>
         <h3>Alertas</h3>
