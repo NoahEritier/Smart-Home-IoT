@@ -1,8 +1,9 @@
 {
   "name": "publisher",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "publisher.js",
   "scripts": {
+    "start": "node publisher.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -10,6 +11,9 @@
   "license": "ISC",
   "dependencies": {
     "mqtt": "^5.14.1"
+  },
+  "engines": {
+    "node": "20.x"
   },
   "description": ""
 }
