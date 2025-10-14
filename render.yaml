@@ -3,7 +3,7 @@ services:
     name: smart-home-iot-publisher
     env: node
     plan: free
-    rootDirectory: smart-home-iot/publisher
+    rootDir: smart-home-iot/publisher
     buildCommand: npm install --omit=dev || npm install --production
     startCommand: npm start
     envVars:

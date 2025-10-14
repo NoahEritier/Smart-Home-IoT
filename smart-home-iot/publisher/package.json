@@ -6,14 +6,14 @@
     "start": "node publisher.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "engines": {
+    "node": "^20"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "mqtt": "^5.14.1"
-  },
-  "engines": {
-    "node": "20.x"
   },
   "description": ""
 }
