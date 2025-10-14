@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "publisher.js",
   "scripts": {
-    "start": "node publisher.js",
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "engines": {
@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "express": "^4.19.2",
     "mqtt": "^5.14.1"
   },
   "description": ""

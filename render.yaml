@@ -1,5 +1,5 @@
 services:
-  - type: worker
+  - type: web
     name: smart-home-iot-publisher
     env: node
     plan: free
