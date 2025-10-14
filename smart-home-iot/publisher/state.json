@@ -1,0 +1,18 @@
+{
+  "awayMode": true,
+  "DEVICE_OVERRIDE": {
+    "cocina": {
+      "cafetera": true,
+      "microondas": true,
+      "heladera": true
+    },
+    "jardin": {
+      "cortadora": true
+    },
+    "habitacion": {
+      "pc": false,
+      "aire_acondicionado": false,
+      "lampara": true
+    }
+  }
+}

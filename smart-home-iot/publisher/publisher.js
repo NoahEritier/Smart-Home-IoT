@@ -3,6 +3,8 @@
 // Ejecutar: node publisher.js
 
 const mqtt = require('mqtt');
+const fs = require('fs');
+const path = require('path');
 
 // Broker público (por defecto WebSocket para evitar bloqueos TCP 1883)
 // Cambiá con BROKER_URL si querés otro host/puerto.
@@ -66,12 +68,55 @@ client.on('error', (err) => {
   console.error('🚨 Error de conexión MQTT:', err.message);
 });
 
-// Estados de sistema
+// Estados de sistema con persistencia simple a JSON
 let awayMode = false;
+const STATE_PATH = path.join(__dirname, 'state.json');
+let DEVICE_OVERRIDE = {}; // { [room]: { [device]: boolean|null } }
+
+// Directorio de historial por día (NDJSON: 1 línea por registro por minuto)
+const HISTORY_DIR = path.join(__dirname, 'history');
+try { fs.mkdirSync(HISTORY_DIR, { recursive: true }); } catch {}
+
+function historyFileFor(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return path.join(HISTORY_DIR, `${y}-${m}-${d}.ndjson`);
+}
+
+function appendHistory(record) {
+  try {
+    const line = JSON.stringify(record) + '\n';
+    fs.appendFileSync(historyFileFor(new Date()), line, 'utf8');
+  } catch (e) {
+    console.error('⚠️  No se pudo escribir historial:', e.message);
+  }
+}
+
+function loadState() {
+  try {
+    const txt = fs.readFileSync(STATE_PATH, 'utf8');
+    const data = JSON.parse(txt);
+    awayMode = Boolean(data.awayMode);
+    DEVICE_OVERRIDE = data.DEVICE_OVERRIDE && typeof data.DEVICE_OVERRIDE === 'object' ? data.DEVICE_OVERRIDE : {};
+    console.log('🗂️  Estado cargado desde state.json');
+  } catch (e) {
+    // no-op si no existe
+  }
+}
+
+function saveState() {
+  try {
+    const data = { awayMode, DEVICE_OVERRIDE };
+    fs.writeFileSync(STATE_PATH, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error('⚠️  No se pudo guardar state.json:', e.message);
+  }
+}
 
 function publishStateTopics() {
   const awayPayload = { type: 'away_state', value: awayMode, timestamp: new Date().toISOString() };
-  client.publish('home/system/away/state', JSON.stringify(awayPayload), { qos: 0 });
+  client.publish('home/system/away/state', JSON.stringify(awayPayload), { qos: 0, retain: true });
 }
 
 // Suscripción a comandos de control
@@ -81,6 +126,14 @@ client.on('connect', () => {
   });
   // Publicar estados al conectar
   publishStateTopics();
+  // Publicar estados actuales de dispositivos retenidos
+  for (const room of Object.keys(DEVICE_OVERRIDE)) {
+    for (const device of Object.keys(DEVICE_OVERRIDE[room])) {
+      const on = DEVICE_OVERRIDE[room][device];
+      const payload = { device, room, active: on, timestamp: new Date().toISOString() };
+      client.publish(`home/${room}/device/${device}/state`, JSON.stringify(payload), { qos: 0, retain: true });
+    }
+  }
 });
 
 client.on('message', (topic, payload) => {
@@ -90,6 +143,7 @@ client.on('message', (topic, payload) => {
       awayMode = Boolean(data?.value ?? data);
       console.log(`🏠 Away set -> ${awayMode}`);
       publishStateTopics();
+      saveState();
     }
     // Device control: home/<room>/device/<device>/set
     const match = topic.match(/^home\/(.+)\/device\/(.+)\/set$/);
@@ -105,6 +159,7 @@ client.on('message', (topic, payload) => {
     if (topic === 'home/system/away/set') {
       awayMode = txt === 'true' || txt === '1' || txt === 'on';
       publishStateTopics();
+      saveState();
     }
     const match = topic.match(/^home\/(.+)\/device\/(.+)\/set$/);
     if (match) {
@@ -133,9 +188,9 @@ function simulateCo2() {
   return +val.toFixed(0);
 }
 
-function simulateDevicePower(profile) {
-  // Simple ON/OFF by duty cycle with noise
-  const on = Math.random() < profile.duty;
+function simulateDevicePower(profile, forcedOn) {
+  // ON/OFF definido únicamente por comando (DEVICE_OVERRIDE)
+  const on = !!forcedOn;
   const expected = on ? profile.peak : profile.base;
   const noise = gaussianRandom(0, Math.max(5, expected * 0.05));
   const value = Math.max(0, expected + noise);
@@ -143,14 +198,14 @@ function simulateDevicePower(profile) {
 }
 
 // Overrides de dispositivos por habitación
-const DEVICE_OVERRIDE = {}; // { [room]: { [device]: boolean|null } }
 function setDeviceOverride(room, device, on) {
   if (!DEVICE_OVERRIDE[room]) DEVICE_OVERRIDE[room] = {};
   DEVICE_OVERRIDE[room][device] = on;
   // Publicar estado inmediato
   const payload = { device, room, active: on, timestamp: new Date().toISOString() };
-  client.publish(`home/${room}/device/${device}/state`, JSON.stringify(payload), { qos: 0 });
+  client.publish(`home/${room}/device/${device}/state`, JSON.stringify(payload), { qos: 0, retain: true });
   console.log(`🔌 Override ${room}/${device} -> ${on ? 'ON' : 'OFF'}`);
+  saveState();
 }
 
 // Temperatura: base diaria (seno) + ruido gaussiano
@@ -222,7 +277,10 @@ function maybeToggleLeak(room) {
   publishSensor(`home/${room}/sensor/leak`, 'leak', value, 'bool', room);
 }
 
-// Publica periódicamente (cada 30s) para todas las habitaciones
+// Cargar estado persistido antes de iniciar el loop
+loadState();
+
+// Publica periódicamente (cada 60s) para todas las habitaciones
 setInterval(() => {
   ROOMS.forEach((room) => {
     const temp = simulateTemperature();
@@ -232,15 +290,13 @@ setInterval(() => {
     // Per-device power and total aggregation
     const devices = ROOM_DEVICES[room] || [];
     let totalPower = 0;
+    const deviceSnapshots = [];
     devices.forEach((d) => {
-      let sim = simulateDevicePower(d);
       const override = DEVICE_OVERRIDE[room]?.[d.id];
-      if (override === true) {
-        sim = { on: true, expected: d.peak, value: Math.max(d.peak - 20, d.peak * 0.95) };
-      } else if (override === false) {
-        sim = { on: false, expected: d.base, value: d.base };
-      }
+      const desiredOn = override === true; // si no hay override o es false, queda apagado
+      const sim = simulateDevicePower(d, desiredOn);
       totalPower += sim.value;
+      deviceSnapshots.push({ device: d.id, value: sim.value, expected: sim.expected, active: sim.on });
       const payload = {
         deviceId: `sim-${room}-${d.id}`,
         type: 'device_power',
@@ -257,7 +313,7 @@ setInterval(() => {
       });
       // Publish explicit device state topic too
       const statePayload = { device: d.id, room, active: sim.on, timestamp: new Date().toISOString() };
-      client.publish(`home/${room}/device/${d.id}/state`, JSON.stringify(statePayload), { qos: 0 });
+      client.publish(`home/${room}/device/${d.id}/state`, JSON.stringify(statePayload), { qos: 0, retain: true });
     });
 
     publishSensor(`home/${room}/sensor/temperature`, 'temperature', temp, 'C', room);
@@ -284,8 +340,21 @@ setInterval(() => {
         console.log(`➡️  Publicado en home/${room}/sensors:`, consolidated);
       }
     });
+
+    // Guardar registro histórico por minuto (uno por sala) con todos los datos relevantes
+    appendHistory({
+      ts: new Date().toISOString(),
+      room,
+      away: awayMode,
+      temperature: temp,
+      humidity: hum,
+      co2,
+      leak: !!leakState[room],
+      power: totalPower,
+      devices: deviceSnapshots
+    });
   });
-}, 30000);
+}, 60000);
 
 // Manejo de cierre
 process.on('SIGINT', () => {
